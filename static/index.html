@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NSE Stock Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg0:     #0b0e13;
+    --bg1:     #111620;
+    --bg2:     #181e2d;
+    --bg3:     #1e2638;
+    --border:  #252f45;
+    --border2: #2e3a55;
+    --text1:   #e2e8f0;
+    --text2:   #8899b4;
+    --text3:   #4a5a78;
+    --accent:  #3b82f6;
+    --accent2: #60a5fa;
+    --green:   #22c55e;
+    --red:     #ef4444;
+    --yellow:  #eab308;
+    --orange:  #f97316;
+    --purple:  #a78bfa;
+    --cyan:    #22d3ee;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-ui:   'Syne', sans-serif;
+  }
+  html, body { height: 100%; background: var(--bg0); color: var(--text1); font-family: var(--font-ui); overflow-x: hidden; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg1); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(59,130,246,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,.03) 1px, transparent 1px);
+    background-size: 40px 40px; pointer-events: none; z-index: 0;
+  }
+  .app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* TOPBAR */
+  .topbar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 24px;
+    background: var(--bg1); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-weight: 800; font-size: 18px; display: flex; align-items: center; gap: 8px; letter-spacing: -0.5px; }
+  .logo-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 8px var(--accent); }
+  .logo-badge {
+    font-size: 11px; font-weight: 700; letter-spacing: .5px;
+    background: rgba(59,130,246,.15); border: 1px solid rgba(59,130,246,.3);
+    color: var(--accent2); padding: 3px 9px; border-radius: 20px;
+  }
+  .spacer { flex: 1; }
+  .demo-banner {
+    display: none; align-items: center; gap: 6px;
+    background: rgba(234,179,8,.1); border: 1px solid rgba(234,179,8,.3);
+    border-radius: 6px; padding: 5px 12px;
+    font-size: 12px; color: var(--yellow); font-family: var(--font-mono);
+  }
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 20px; font-family: var(--font-mono); font-size: 12px; color: var(--text2);
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); transition: background .3s; }
+  .status-dot.scanning { background: var(--yellow); animation: pulse 1s infinite; }
+  .status-dot.done     { background: var(--green); }
+  .status-dot.error    { background: var(--red); }
+  .btn-refresh {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 18px; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; font-family: var(--font-ui); font-weight: 600; font-size: 13px;
+    cursor: pointer; transition: all .2s;
+  }
+  .btn-refresh:hover:not(:disabled) { background: var(--accent2); transform: translateY(-1px); }
+  .btn-refresh:disabled { background: var(--bg3); color: var(--text3); cursor: not-allowed; }
+  .btn-refresh.spinning svg { animation: spin .7s linear infinite; }
+
+  /* FILTER BAR */
+  .filterbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 14px;
+    padding: 14px 24px; background: var(--bg1); border-bottom: 1px solid var(--border);
+  }
+  .filter-label { font-size: 12px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .filter-group { display: flex; align-items: center; gap: 8px; }
+  .filter-input {
+    width: 80px; background: var(--bg2); border: 1px solid var(--border2);
+    color: var(--text1); padding: 6px 10px; border-radius: 6px;
+    font-family: var(--font-mono); font-size: 13px; outline: none; transition: border .2s;
+  }
+  .filter-input:focus { border-color: var(--accent); }
+  .filter-sep { width: 1px; height: 24px; background: var(--border); }
+  .filter-apply {
+    padding: 7px 16px; background: var(--bg3); border: 1px solid var(--border2);
+    color: var(--text1); border-radius: 6px; font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all .2s;
+  }
+  .filter-apply:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* PROGRESS */
+  .progress-wrap { height: 3px; background: var(--bg2); }
+  .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--cyan)); width: 0%; transition: width .4s; }
+
+  /* STATS */
+  .stats-row { display: flex; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--bg1); }
+  .stat-card { display: flex; flex-direction: column; gap: 2px; padding: 14px 24px 14px 0; border-right: 1px solid var(--border); margin-right: 24px; }
+  .stat-card:last-child { border-right: none; }
+  .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .6px; }
+  .stat-value { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
+  .stat-value.green  { color: var(--green); }
+  .stat-value.accent { color: var(--accent2); }
+  .stat-value.yellow { color: var(--yellow); }
+  .stat-value.white  { color: var(--text1); }
+
+  /* CONTENT */
+  .content { flex: 1; padding: 24px; }
+  .table-wrap { background: var(--bg1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: 0 0 20px rgba(59,130,246,.1); }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: var(--bg2); }
+  th {
+    padding: 12px 16px; text-align: left;
+    font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+    color: var(--text3); text-transform: uppercase; letter-spacing: .6px;
+    border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  th:hover { color: var(--text2); }
+  th.sorted { color: var(--accent2); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; animation: fadeRow .3s ease both; }
+  tbody tr:hover { background: var(--bg2); }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 13px 16px; font-family: var(--font-mono); font-size: 13px; white-space: nowrap; }
+
+  .rank-cell { font-size: 11px; color: var(--text3); font-weight: 600; text-align: center; }
+  .rank-1 { color: var(--yellow); }
+  .rank-2 { color: var(--text2); }
+  .rank-3 { color: var(--orange); }
+  .ticker-cell { font-weight: 700; font-size: 14px; color: var(--accent2); }
+  .price-cell  { font-weight: 600; color: var(--text1); }
+  .pe-cell     { color: var(--cyan); }
+
+  .vol-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .vol-high  { background: rgba(34,197,94,.12);  color: var(--green);  border: 1px solid rgba(34,197,94,.25); }
+  .vol-med   { background: rgba(234,179,8,.10);  color: var(--yellow); border: 1px solid rgba(234,179,8,.25); }
+
+  .rsi-wrap    { display: flex; align-items: center; gap: 10px; }
+  .rsi-bar-bg  { width: 80px; height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+  .rsi-bar-fill { height: 100%; border-radius: 3px; transition: width .6s; }
+  .rsi-high { background: var(--green); }
+  .rsi-med  { background: var(--yellow); }
+
+  .score-cell { color: var(--purple); font-weight: 700; }
+
+  /* EMPTY / OVERLAY */
+  .empty-state { text-align: center; padding: 80px 24px; color: var(--text3); }
+  .empty-icon  { font-size: 48px; margin-bottom: 16px; }
+  .empty-title { font-size: 18px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+  .empty-sub   { font-size: 14px; line-height: 1.6; }
+
+  .scan-overlay { text-align: center; padding: 80px 24px; display: none; }
+  .scan-overlay.visible { display: block; }
+  .scan-spinner { width: 48px; height: 48px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 20px; }
+  .scan-text { font-family: var(--font-mono); font-size: 14px; color: var(--text2); }
+  .scan-sub  { font-size: 13px; color: var(--text3); margin-top: 6px; }
+
+  /* FOOTER */
+  .footer { padding: 12px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-size: 12px; color: var(--text3); font-family: var(--font-mono); }
+
+  /* TOAST */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--bg2); border: 1px solid var(--border2); color: var(--text1);
+    padding: 12px 20px; border-radius: 10px; font-size: 13px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    transform: translateY(80px); opacity: 0; transition: all .3s; z-index: 999;
+    font-family: var(--font-mono);
+  }
+  .toast.show { transform: none; opacity: 1; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @keyframes spin  { to { transform: rotate(360deg); } }
+  @keyframes fadeRow { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      NSE Scanner
+    </div>
+    <span class="logo-badge">NIFTY 500</span>
+
+    <div id="demoBanner" class="demo-banner">
+      &#9888; DEMO MODE &mdash; mock data (NSE unreachable)
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="status-pill">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Connecting...</span>
+    </div>
+
+    <button class="btn-refresh" id="btnRefresh" onclick="triggerScan()">
+      <svg id="refreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+      Refresh
+    </button>
+  </header>
+
+  <!-- FILTER BAR -->
+  <div class="filterbar">
+    <span class="filter-label">Filters</span>
+    <div class="filter-group">
+      <span class="filter-label">P/E &lt;</span>
+      <input class="filter-input" type="number" id="fPE"  value="20" min="1" max="100" step="1"/>
+    </div>
+    <div class="filter-sep"></div>
+    <div class="filter-group">
+      <span class="filter-label">Vol &gt;</span>
+      <input class="filter-input" type="number" id="fVol" value="2"  min="0.5" max="20" step="0.5"/>
+      <span class="filter-label">x avg</span>
+    </div>
+    <div class="filter-sep"></div>
+    <div class="filter-group">
+      <span class="filter-label">RSI &gt;</span>
+      <input class="filter-input" type="number" id="fRSI" value="50" min="1" max="100" step="1"/>
+    </div>
+    <button class="filter-apply" onclick="triggerScan()">Apply &amp; Scan</button>
+    <div class="spacer"></div>
+    <span id="lastUpdated" style="font-size:12px;color:var(--text3);font-family:var(--font-mono)"></span>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="progress-wrap">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Matched</div>
+      <div class="stat-value green"  id="statMatched">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Scanned</div>
+      <div class="stat-value accent" id="statScanned">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Scan Time</div>
+      <div class="stat-value yellow" id="statTime">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Universe</div>
+      <div class="stat-value white">NIFTY 500</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Next Scan</div>
+      <div class="stat-value accent" id="statCountdown">60s</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <main class="content">
+    <div class="table-wrap">
+
+      <div class="scan-overlay" id="scanOverlay">
+        <div class="scan-spinner"></div>
+        <div class="scan-text">Scanning NSE stocks...</div>
+        <div class="scan-sub" id="scanProgress">Preparing...</div>
+      </div>
+
+      <div id="tableWrap">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">&#128225;</div>
+          <div class="empty-title">Connecting to NSE...</div>
+          <div class="empty-sub">First scan starts automatically. Results appear here.</div>
+        </div>
+
+        <table id="resultsTable" style="display:none">
+          <thead>
+            <tr>
+              <th style="width:48px;text-align:center">#</th>
+              <th onclick="sortBy('ticker')">Ticker <span>&#8597;</span></th>
+              <th onclick="sortBy('price')">Price (INR) <span>&#8597;</span></th>
+              <th onclick="sortBy('pe')">P/E <span>&#8597;</span></th>
+              <th onclick="sortBy('vol_ratio')">Vol Ratio <span>&#8597;</span></th>
+              <th onclick="sortBy('rsi')">RSI (14) <span>&#8597;</span></th>
+              <th onclick="sortBy('score')">Score <span>&#8597;</span></th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+
+  <div class="footer">
+    <span>NSE Scanner &mdash; Data via NSEPython &mdash; Not financial advice</span>
+    <span id="wsStatus">Connecting...</span>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentData  = [];
+let sortKey      = 'score';
+let sortAsc      = false;
+let countdown    = 60;
+let countdownTimer;
+let ws;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('wsStatus').textContent = 'Live';
+    setStatus('done', 'Connected');
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'init')     handleInit(msg.data);
+    if (msg.type === 'status')   handleStatus(msg.data);
+    if (msg.type === 'progress') handleProgress(msg.data);
+    if (msg.type === 'results')  handleResults(msg.data);
+  };
+  ws.onclose = () => {
+    document.getElementById('wsStatus').textContent = 'Disconnected';
+    setStatus('error', 'Disconnected');
+    setTimeout(connectWS, 3000);
+  };
+  setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+}
+
+function handleInit(d) {
+  if (d.demo_mode) document.getElementById('demoBanner').style.display = 'flex';
+  if (d.filters) {
+    document.getElementById('fPE').value  = d.filters.max_pe;
+    document.getElementById('fVol').value = d.filters.min_vol_ratio;
+    document.getElementById('fRSI').value = d.filters.min_rsi;
+  }
+  if (d.results && d.results.length) {
+    currentData = d.results;
+    renderTable();
+    if (d.last_updated) document.getElementById('lastUpdated').textContent = 'Updated: ' + d.last_updated;
+    if (d.scan_time_s)  document.getElementById('statTime').textContent = d.scan_time_s + 's';
+    document.getElementById('statMatched').textContent = d.results.length;
+  }
+  if (d.status === 'scanning') showOverlay(true);
+}
+
+function handleStatus(d) {
+  const scanning = d.status === 'scanning';
+  showOverlay(scanning);
+  setStatus(d.status, scanning ? 'Scanning...' : 'Ready');
+  document.getElementById('btnRefresh').disabled = scanning;
+  document.getElementById('btnRefresh').classList.toggle('spinning', scanning);
+  if (!scanning) resetCountdown();
+}
+
+function handleProgress(d) {
+  const pct = d.progress || 0;
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('scanProgress').textContent = d.scanned + ' / ' + d.total + ' stocks scanned';
+  document.getElementById('statScanned').textContent  = d.scanned + '/' + d.total;
+}
+
+function handleResults(d) {
+  currentData = d.results || [];
+  renderTable();
+  document.getElementById('statMatched').textContent  = d.total_found;
+  document.getElementById('statTime').textContent     = d.scan_time_s + 's';
+  document.getElementById('lastUpdated').textContent  = 'Updated: ' + d.last_updated;
+  showOverlay(false);
+  setStatus('done', 'Ready');
+  document.getElementById('btnRefresh').disabled = false;
+  document.getElementById('btnRefresh').classList.remove('spinning');
+  document.getElementById('progressBar').style.width = '100%';
+  setTimeout(() => document.getElementById('progressBar').style.width = '0%', 800);
+  showToast('Scan complete — ' + currentData.length + ' stocks matched');
+  resetCountdown();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  const table = document.getElementById('resultsTable');
+  const empty = document.getElementById('emptyState');
+
+  if (!currentData.length) {
+    empty.style.display = 'block'; table.style.display = 'none';
+    empty.innerHTML = '<div class="empty-icon">&#128269;</div><div class="empty-title">No stocks matched</div><div class="empty-sub">Try relaxing the filter thresholds.</div>';
+    return;
+  }
+  empty.style.display = 'none'; table.style.display = 'table';
+
+  const sorted = [...currentData].sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  tbody.innerHTML = sorted.map((row, i) => {
+    const rank   = i + 1;
+    const rkCls  = rank===1?'rank-1':rank===2?'rank-2':rank===3?'rank-3':'';
+    const volCls = row.vol_ratio >= 3 ? 'vol-high' : 'vol-med';
+    const rsiCls = row.rsi >= 65 ? 'rsi-high' : 'rsi-med';
+    return `<tr style="animation-delay:${i*15}ms">
+      <td class="rank-cell ${rkCls}">${rank}</td>
+      <td class="ticker-cell">${row.ticker}</td>
+      <td class="price-cell">&#8377;${row.price.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="pe-cell">${row.pe.toFixed(1)}</td>
+      <td><span class="vol-badge ${volCls}">${row.vol_ratio.toFixed(2)}x</span></td>
+      <td><div class="rsi-wrap"><span>${row.rsi.toFixed(1)}</span><div class="rsi-bar-bg"><div class="rsi-bar-fill ${rsiCls}" style="width:${row.rsi}%"></div></div></div></td>
+      <td class="score-cell">${row.score.toFixed(3)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sortBy(key) {
+  if (sortKey === key) sortAsc = !sortAsc;
+  else { sortKey = key; sortAsc = false; }
+  renderTable();
+}
+
+function triggerScan() {
+  const body = {
+    max_pe:        parseFloat(document.getElementById('fPE').value)  || 20,
+    min_vol_ratio: parseFloat(document.getElementById('fVol').value) || 2,
+    min_rsi:       parseFloat(document.getElementById('fRSI').value) || 50,
+  };
+  fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  resetCountdown();
+}
+
+function showOverlay(show) {
+  document.getElementById('scanOverlay').classList.toggle('visible', show);
+  document.getElementById('tableWrap').style.opacity = show ? '.3' : '1';
+}
+
+function setStatus(s, txt) {
+  document.getElementById('statusDot').className  = 'status-dot ' + s;
+  document.getElementById('statusText').textContent = txt;
+}
+
+function resetCountdown() {
+  clearInterval(countdownTimer);
+  countdown = 60;
+  document.getElementById('statCountdown').textContent = '60s';
+  countdownTimer = setInterval(() => {
+    countdown = Math.max(0, countdown - 1);
+    document.getElementById('statCountdown').textContent = countdown + 's';
+    if (countdown === 0) countdown = 60;
+  }, 1000);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+connectWS();
+resetCountdown();
+</script>
+</body>
+</html>
